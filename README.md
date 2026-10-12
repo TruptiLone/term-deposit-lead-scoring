@@ -1,4 +1,4 @@
-# Triton Lead Scoring Service
+# Term-Deposit Lead Scoring
 
 Serve a term-deposit lead-scoring model with **NVIDIA Triton Inference Server**
 (ONNX Runtime backend, dynamic batching), put a **FastAPI** gateway in front of it,
