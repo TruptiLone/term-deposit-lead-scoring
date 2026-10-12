@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Jupyter / Colab
+.ipynb_checkpoints/
+
+# Raw data: download from UCI instead of committing it
+data/
+*.csv
+
+# Downloaded archives (the model files live in model_repository/ already)
+*.zip
+
+# Secrets and local config
+.env
+
+# OS / editor files
+.DS_Store
+.vscode/
