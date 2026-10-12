@@ -1,0 +1,42 @@
+[
+  {
+    "concurrency": 1,
+    "requests": 2000,
+    "errors": 0,
+    "rps": 69.7,
+    "p50_ms": 13.21,
+    "p95_ms": 23.49,
+    "p99_ms": 31.34,
+    "name": "gateway /score"
+  },
+  {
+    "concurrency": 8,
+    "requests": 2000,
+    "errors": 0,
+    "rps": 114.5,
+    "p50_ms": 61.68,
+    "p95_ms": 132.58,
+    "p99_ms": 186.49,
+    "name": "gateway /score"
+  },
+  {
+    "concurrency": 32,
+    "requests": 2000,
+    "errors": 0,
+    "rps": 76.7,
+    "p50_ms": 281.52,
+    "p95_ms": 1245.41,
+    "p99_ms": 1932.99,
+    "name": "gateway /score"
+  },
+  {
+    "concurrency": 64,
+    "requests": 2000,
+    "errors": 0,
+    "rps": 55.7,
+    "p50_ms": 760.72,
+    "p95_ms": 3409.72,
+    "p99_ms": 5069.83,
+    "name": "gateway /score"
+  }
+]
