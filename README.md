@@ -19,6 +19,18 @@ so the best prospects can be called first.
   The data is not stored in this repo; download it from UCI.
 - **Leakage note:** the `duration` column (call length) is dropped because it is only
   known after the call.
+  
+## Data
+
+The dataset is not stored in this repo. Download it from UCI:
+
+1. Go to https://archive.ics.uci.edu/dataset/222/bank+marketing and download the zip.
+2. Unzip it, then unzip the inner `bank.zip` to get `bank-full.csv`.
+3. Put `bank-full.csv` in a `data/` folder (git-ignored), or in Google Drive if you use Colab.
+4. Update `path` in the notebook's loading cell to match.
+
+Citation: Moro, S., Cortez, P., Rita, P. (2014). A data-driven approach to predict the
+success of bank telemarketing. Decision Support Systems.
 
 ## Architecture
 
