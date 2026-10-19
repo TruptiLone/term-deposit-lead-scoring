@@ -19,6 +19,12 @@ DEFAULT_METADATA = Path(__file__).resolve().parent.parent / "model_repository" /
 METADATA_PATH = Path(os.getenv("METADATA_PATH", DEFAULT_METADATA))
 MAX_BATCH = 64  # keep in sync with max_batch_size in config.pbtxt
 
+
+# Optional LLM explanation service (vLLM, OpenAI-compatible API). /explain needs it; /score does not.
+VLLM_URL = os.getenv("VLLM_URL", "").rstrip("/")
+VLLM_API_KEY = os.getenv("VLLM_API_KEY", "")
+VLLM_MODEL = os.getenv("VLLM_MODEL", "explainer")
+
 # ---- Feature layout, loaded from the file saved by the training notebook ----------------
 _meta = json.loads(METADATA_PATH.read_text())
 FEATURE_NAMES: list[str] = _meta["feature_names"]
@@ -91,6 +97,12 @@ class BatchResponse(BaseModel):
     triton_ms: float
 
 
+
+class ExplainResponse(ScoreResponse):
+    explanation: str | None  # None if the LLM service is not configured or failed
+    llm_ms: float | None = None
+    llm_error: str | None = None
+
 def encode(customer: Customer) -> list[float]:
     """Customer record -> the same ordered, one-hot-encoded numbers used in training."""
     row = [0.0] * N_FEATURES
@@ -151,11 +163,45 @@ def to_response(prob: float, triton_ms: float) -> ScoreResponse:
     )
 
 
+def build_messages(customer: Customer, result: ScoreResponse) -> list[dict]:
+    """Prompt for the explanation. The LLM only sees the customer's details and the score."""
+    facts = ", ".join(f"{k}={v}" for k, v in customer.model_dump().items())
+    system = (
+        "You write short notes for bank sales staff about term-deposit leads. "
+        "You are given a customer's details and a model's score. "
+        "Write exactly 2 plain-English sentences: describe the customer's profile using only the "
+        "details given, then state the recommendation. "
+        "Do not claim to know why the model produced its score. Do not invent facts."
+    )
+    user = (
+        f"Customer: {facts}\n"
+        f"Model score: {result.probability:.1%} chance of subscribing "
+        f"(about 12% of customers overall subscribe; the call threshold is {result.threshold:.1%}).\n"
+        f"Recommendation: {result.decision}."
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+async def call_llm(client: httpx.AsyncClient, messages: list[dict]) -> str:
+    resp = await client.post("/v1/chat/completions", json={
+        "model": VLLM_MODEL, "messages": messages, "max_tokens": 120, "temperature": 0.2,
+    })
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.client = httpx.AsyncClient(base_url=TRITON_URL, timeout=10.0)
+    app.state.llm = (
+        httpx.AsyncClient(base_url=VLLM_URL, headers={"Authorization": f"Bearer {VLLM_API_KEY}"},
+                          timeout=60.0)
+        if VLLM_URL else None
+    )
     yield
     await app.state.client.aclose()
+    if app.state.llm is not None:
+        await app.state.llm.aclose()
 
 
 app = FastAPI(title="Term-Deposit Lead Scoring Gateway", lifespan=lifespan)
@@ -177,6 +223,29 @@ async def score(customer: Customer, request: Request):
     t0 = time.perf_counter()
     prob = (await score_rows(request.app.state.client, [row]))[0]
     return to_response(prob, (time.perf_counter() - t0) * 1000)
+
+
+@app.post("/explain", response_model=ExplainResponse)
+async def explain(customer: Customer, request: Request):
+    """Score the customer with Triton, then ask the LLM (vLLM) for a short plain-English note.
+
+    Scoring never depends on the LLM: if it is down or not configured, you still get the score.
+    """
+    row = encode(customer)
+    t0 = time.perf_counter()
+    prob = (await score_rows(request.app.state.client, [row]))[0]
+    result = to_response(prob, (time.perf_counter() - t0) * 1000)
+    base = result.model_dump()
+
+    llm = request.app.state.llm
+    if llm is None:
+        return ExplainResponse(**base, explanation=None, llm_error="VLLM_URL is not set")
+    t1 = time.perf_counter()
+    try:
+        text = await call_llm(llm, build_messages(customer, result))
+    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+        return ExplainResponse(**base, explanation=None, llm_error=f"{type(exc).__name__}: {exc}"[:200])
+    return ExplainResponse(**base, explanation=text, llm_ms=round((time.perf_counter() - t1) * 1000, 2))
 
 
 @app.post("/score/batch", response_model=BatchResponse)
